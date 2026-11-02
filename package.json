@@ -1,0 +1,41 @@
+{
+  "name": "mdmk-video-toolkit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MDMK ভিডিও টুলকিট — mdmk.mp4 + timestamp.json থেকে ক্যাশপন ক্যাপশন + ইনফোগ্রাফিক ভিডিও রেন্ডার (Remotion)",
+  "scripts": {
+    "preview": "remotion studio index.ts",
+    "render": "remotion render index.ts MDMK out.mp4",
+    "still": "remotion still index.ts MDMK test-frame.png --frame=30",
+    "dev": "next dev",
+    "build:next": "next build",
+    "render:test": "remotion render index.ts MDMK test-3s.mp4 --frames=0-89",
+    "render:captions": "remotion render index.ts MDMK test-captions.mp4 --frames=0-449",
+    "still:conjuncts": "remotion still index.ts CaptionTest conjuncts.png --frame=0",
+    "still:blocks": "remotion still index.ts BlocksDemo blocks.png --frame=90",
+    "render:blocks": "remotion render index.ts BlocksDemo blocks-demo.mp4",
+    "still:svgs": "node still-svgs.mjs",
+    "test:sfx": "npx --yes tsx sfxPicker.test.ts",
+    "still:mdmk": "node still-mdmk.mjs",
+    "test:director": "npx --yes tsx director.test.ts",
+    "test:layers": "npx --yes tsx layers.test.ts",
+    "typecheck": "tsc --noEmit",
+    "render:lowq": "remotion render index.ts MDMK test-full-lowq.mp4 --scale=0.35 --crf=38 --jpeg-quality=45"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.0",
+    "@remotion/media-parser": "^4.0.0",
+    "@remotion/media-utils": "^4.0.0",
+    "@remotion/transitions": "^4.0.0",
+    "next": "^15.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "typescript": "^5.4.0"
+  }
+}

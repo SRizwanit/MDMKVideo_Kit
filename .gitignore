@@ -1,0 +1,15 @@
+node_modules
+out
+out.mp4
+test-frame.png
+.next
+.DS_Store
+*.log
+test-3s.mp4
+test-captions.mp4
+conjuncts.png
+blocks.png
+blocks-demo.mp4
+svgstill-*.png
+mdmkstill-*.png
+test-full-lowq.mp4
