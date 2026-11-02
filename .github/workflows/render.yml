@@ -1,1 +1,215 @@
+# =====================================================================
+# MDMK ভিডিও রেন্ডার (ধাপ ৭)
+# mdmk.mp4 / timestamp.json আপলোড (কমিট) করলেই অটো রেন্ডার হবে।
+# ম্যানুয়ালি চালাতে: Actions ট্যাব → "MDMK ভিডিও রেন্ডার" → Run workflow।
+# আউটপুট: (১) Releases-এ স্থায়ী out.mp4 (সহজ ডাউনলোড)  (২) Artifact (৭ দিন)।
+# package-lock.json থাকলে `npm ci`, না থাকলে `npm install` — দুই অবস্থাতেই চলে।
+# =====================================================================
+name: MDMK ভিডিও রেন্ডার
 
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'mdmk.mp4'
+      - 'timestamp.json'
+  workflow_dispatch:
+
+# Release বানাতে লেখার অনুমতি দরকার
+permissions:
+  contents: write
+
+# একসাথে একাধিক রেন্ডার নয় — নতুনটা এলে পুরোনোটা বাতিল
+concurrency:
+  group: mdmk-render
+  cancel-in-progress: true
+
+jobs:
+  render:
+    name: রেন্ডার → out.mp4
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: কোড নামানো
+        uses: actions/checkout@v4
+
+      # ---------- ইনপুট যাচাই (ভুল হলে পরিষ্কার বাংলা এরর) ----------
+      - name: ইনপুট ফাইল যাচাই
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const errors = [];
+          const fail = (m) => errors.push(m);
+
+          // ১) mdmk.mp4
+          if (!fs.existsSync('mdmk.mp4')) {
+            fail('mdmk.mp4 পাওয়া যায়নি। রিপোর একদম রুটে (কোনো ফোল্ডারের ভিতরে নয়) mdmk.mp4 নামে ভিডিও আপলোড করো।');
+          } else {
+            const st = fs.statSync('mdmk.mp4');
+            if (st.size < 10240) {
+              const head = fs.readFileSync('mdmk.mp4').subarray(0, 60).toString('utf8');
+              if (head.startsWith('version https://git-lfs')) {
+                fail('mdmk.mp4 আসলে Git LFS পয়েন্টার, আসল ভিডিও নয়। ভিডিওটি সরাসরি GitHub ওয়েব থেকে আবার আপলোড করো (LFS ছাড়া)।');
+              } else {
+                fail('mdmk.mp4 খুব ছোট (' + st.size + ' বাইট) — ফাইলটি নষ্ট বা অসম্পূর্ণ আপলোড। আবার আপলোড করো।');
+              }
+            } else {
+              const fd = fs.openSync('mdmk.mp4', 'r');
+              const b = Buffer.alloc(12);
+              fs.readSync(fd, b, 0, 12, 0);
+              fs.closeSync(fd);
+              if (b.subarray(4, 8).toString('latin1') !== 'ftyp') {
+                fail('mdmk.mp4 বৈধ MP4 মনে হচ্ছে না। ভিডিওটি MP4 (H.264 + AAC) ফরম্যাটে এক্সপোর্ট করে আবার আপলোড করো।');
+              }
+            }
+          }
+
+          // ২) timestamp.json
+          if (!fs.existsSync('timestamp.json')) {
+            fail('timestamp.json পাওয়া যায়নি। রিপোর রুটে timestamp.json নামে ফাইল আপলোড করো।');
+          } else {
+            try {
+              const j = JSON.parse(fs.readFileSync('timestamp.json', 'utf8').replace(/^\uFEFF/, ''));
+              if (!j || !Array.isArray(j.words) || j.words.length === 0) {
+                fail('timestamp.json-এ "words" তালিকা নেই বা খালি। ফরম্যাট: { "metadata": {...}, "transcript": "...", "words": [ {"word":"...","start":"00:00.260","end":"00:00.990"} ] }');
+              }
+            } catch (e) {
+              fail('timestamp.json বৈধ JSON নয় (' + e.message + ')। ফাইলটি আবার এক্সপোর্ট করে আপলোড করো; কমা/কোটেশন ভুল আছে কিনা দেখো।');
+            }
+          }
+
+          // ৩) সাউন্ড ইফেক্ট sfx1…sfx12 (সংখ্যা: sfxPicker.ts-এর SFX_COUNT)
+          let count = 12;
+          try {
+            const m = fs.readFileSync('sfxPicker.ts', 'utf8').match(/SFX_COUNT\s*=\s*(\d+)/);
+            if (m) count = parseInt(m[1], 10);
+          } catch {}
+          const missing = [];
+          for (let i = 1; i <= count; i++) {
+            const f = 'sfx' + i + '.wav';
+            if (!fs.existsSync(f) || fs.statSync(f).size === 0) missing.push(f);
+          }
+          if (missing.length) {
+            fail('সাউন্ড ফাইল নেই/খালি: ' + missing.join(', ') + '। এগুলো রিপোর রুটে আপলোড করো (sfx1.wav … sfx' + count + '.wav সবকটি লাগবে)।');
+          }
+
+          if (errors.length) {
+            for (const e of errors) console.log('::error::' + e);
+            process.exit(1);
+          }
+          console.log('✅ সব ইনপুট ঠিক আছে (mdmk.mp4, timestamp.json, sfx১–' + count + ')');
+          JS
+
+      # ---------- সেটআপ ----------
+      - name: Node 20 সেটআপ
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # cache: npm ইচ্ছাকৃত বাদ — সেটা package-lock.json না থাকলে ফেইল করে।
+          # নিচের actions/cache লকফাইল থাকুক বা না থাকুক, দুই ক্ষেত্রেই চলে।
+
+      - name: npm ক্যাশ + Remotion ব্রাউজার ক্যাশ
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules/.remotion
+          key: npm-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      - name: ডিপেন্ডেন্সি ইনস্টল (লকফাইল থাকলে npm ci, না থাকলে npm install)
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "package-lock.json আছে → npm ci"
+            npm ci --no-audit --no-fund || {
+              echo "::warning::npm ci ফেইল (লকফাইল package.json-এর সাথে মিলছে না?) → npm install দিয়ে চালিয়ে যাচ্ছি"
+              rm -rf node_modules
+              npm install --no-audit --no-fund
+            }
+          else
+            echo "package-lock.json নেই → npm install"
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Chrome Headless-এর লাইব্রেরি ও ফন্ট
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            libnss3 libdbus-1-3 libatk1.0-0 libgbm-dev libasound2t64 \
+            libxrandr2 libxkbcommon-dev libxfixes3 libxcomposite1 libxdamage1 \
+            libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2
+          # বাংলা ফন্ট ও ইমোজি/চিহ্নের ফলব্যাক (মূল ফন্ট Baloo Da 2 রেন্ডারের সময় Google Fonts থেকে আসে)
+          sudo apt-get install -y --no-install-recommends fonts-noto-core fonts-noto-color-emoji \
+            || echo "::warning::ফলব্যাক ফন্ট ইনস্টল হয়নি — মূল ফন্টে সমস্যা না থাকলে অসুবিধা নেই"
+          fc-cache -f || true
+
+      - name: Remotion ব্রাউজার প্রস্তুত
+        run: npx remotion browser ensure
+
+      # ---------- রেন্ডার ----------
+      - name: ভিডিও রেন্ডার (1080×1920, 30fps, h264 + aac)
+        run: |
+          START=$(date +%s)
+          npx remotion render index.ts MDMK out.mp4 \
+            --codec=h264 \
+            --audio-codec=aac \
+            --timeout=120000 \
+            --log=info
+          END=$(date +%s)
+          echo "RENDER_SECONDS=$((END - START))" >> "$GITHUB_ENV"
+
+      - name: আউটপুট যাচাই
+        run: |
+          if [ ! -s out.mp4 ]; then
+            echo "::error::রেন্ডার শেষ হয়েছে কিন্তু out.mp4 তৈরি হয়নি বা খালি। উপরের রেন্ডার-লগ দেখো।"
+            exit 1
+          fi
+          SIZE=$(du -h out.mp4 | cut -f1)
+          echo "OUT_SIZE=$SIZE" >> "$GITHUB_ENV"
+          echo "✅ out.mp4 তৈরি ($SIZE)"
+
+      # ---------- প্রকাশ ----------
+      - name: Artifact আপলোড (৭ দিন)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdmk-video
+          path: out.mp4
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Release প্রকাশ (স্থায়ী ডাউনলোড লিংক)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: video-${{ github.run_number }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out.mp4 --clobber
+          else
+            gh release create "$TAG" out.mp4 \
+              --target "$GITHUB_SHA" \
+              --title "MDMK ভিডিও #${{ github.run_number }}" \
+              --notes "অটো-রেন্ডার করা ভিডিও (কমিট ${GITHUB_SHA::7})। নিচের Assets থেকে **out.mp4** ট্যাপ করে ডাউনলোড করো।"
+          fi
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/out.mp4"
+          PAGE="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+          {
+            echo "## ✅ ভিডিও তৈরি হয়েছে"
+            echo ""
+            echo "- 📥 **সরাসরি ডাউনলোড:** [out.mp4](${URL}) (${OUT_SIZE})"
+            echo "- 📄 রিলিজ পেজ: [${TAG}](${PAGE})"
+            echo "- ⏱️ রেন্ডার সময়: ${RENDER_SECONDS} সেকেন্ড"
+            echo "- 📦 Artifact (৭ দিন): পেজের নিচে **Artifacts → mdmk-video**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ব্যর্থ হলে করণীয়
+        if: failure()
+        run: |
+          {
+            echo "## ❌ রেন্ডার ব্যর্থ"
+            echo ""
+            echo "- লাল ✗ চিহ্নিত ধাপটি ট্যাপ করে এরর পড়ো।"
+            echo "- **ইনপুট যাচাই** ধাপে ফেইল → ফাইলের নাম/ফরম্যাট ঠিক করে আবার আপলোড করো।"
+            echo "- **রেন্ডার** ধাপে ফেইল (ফন্ট/মেমরি/টাইমআউট) → README-র সমস্যা-সমাধান দেখো; পরে Run workflow দিয়ে আবার চালাও।"
+          } >> "$GITHUB_STEP_SUMMARY"
