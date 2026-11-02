@@ -24,20 +24,20 @@ export type SvgProps = {
 // পুরো বডি CSS `scale(BODY_SCALE)` দিয়ে ছোট করে দেখানো হয় — কাঠামো/অ্যানিমেশন/অনুপাত অক্ষত।
 export const BODY_W = 808; // ডিজাইন-বডির মাপ (SVG-র viewBox)
 export const BODY_H = 380;
-export const BODY_SCALE = 0.78;
+export const BODY_SCALE = 1; // স্টেজ-লেআউটে (ধাপ ৬.৪) আবার পূর্ণ আকার — আগে ০.৭৮ (লেখা চেপে যেত)
 export const BODY_SHOWN_W = Math.round(BODY_W * BODY_SCALE); // ৬৩০
 export const BODY_SHOWN_H = Math.round(BODY_H * BODY_SCALE); // ২৯৬
-const CARD_PAD_X = 30;
-const CARD_PAD_Y = 16;
-const TITLE_SIZE = 38; // আগে ৫৪
-const TITLE_GAP = 4; // আগে ১৮
-export const CARD_W = BODY_SHOWN_W + CARD_PAD_X * 2; // ৬৯০ (আগে ৮৮০)
+const CARD_PAD_X = 26;
+const CARD_PAD_Y = 28;
+const TITLE_SIZE = 54;
+const TITLE_GAP = 18;
+export const CARD_W = BODY_SHOWN_W + CARD_PAD_X * 2; // ৮৬০
 // শিরোনাম-সারি ≈ ৩৮×১.৪ = ৫৩.২; মোট ≈ ১৬+৫৩+৪+২৯৬+১৬ ≈ ৩৮৫ → নিচে y ≈ ৬৩৫
 export const CARD_H = zones.card.height - 1; // ৩৮৪ (minHeight; আসল উচ্চতা কনটেন্ট থেকে ≈ ৩৮৫)
 /** কার্ড নিরাপদ-এলাকার (বাম ৬০ – ডান ১৪০) মাঝে বসে */
-export const CARD_LEFT = safeArea.left + (1080 - safeArea.left - safeArea.right - CARD_W) / 2; // ১৫৫
+export const CARD_LEFT = 1080 - safeArea.right - CARD_W; // ৮০ (ডানের ১৪০ নিরাপদ-এলাকা মেনে)
 /** কার্ডহীন সিন (svg১, svg৯)-এর স্কেল: ৫০০px উঁচু ব্যাজ → ৩৭০ (জোনের ৩৮৫-র ভিতরে) */
-export const STAGE_SCALE = 0.74;
+export const STAGE_SCALE = 1;
 
 const clamp = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'} as const;
 
@@ -53,9 +53,9 @@ const place: React.CSSProperties = {
 /** কার্ডহীন মুক্ত সিনের বক্স — পুরো নিরাপদ-চওড়া (৮৮০), একই উচ্চতা */
 const placeStage: React.CSSProperties = {
   position: 'absolute',
-  left: safeArea.left,
+  left: CARD_LEFT,
   top: zones.card.top,
-  width: 1080 - safeArea.left - safeArea.right,
+  width: CARD_W,
   height: CARD_H,
 };
 
@@ -81,9 +81,9 @@ export const SvgCard: React.FC<
       padding={`${CARD_PAD_Y}px ${CARD_PAD_X}px`}
       titleSize={TITLE_SIZE}
       titleGap={TITLE_GAP}
-      radius={32}
+      radius={40}
     >
-      {/* দেখানোর বক্স ৬৩০×২৯৬; ভিতরে ৮০৮×৩৮০ ডিজাইন-বডি ×০.৭৮ */}
+      {/* দেখানোর বক্স ৮০৮×৩৮০; ভিতরে ৮০৮×৩৮০ ডিজাইন-বডি ×১ */}
       <div style={{width: BODY_SHOWN_W, height: BODY_SHOWN_H, position: 'relative'}}>
         <div
           style={{

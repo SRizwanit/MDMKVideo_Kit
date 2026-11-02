@@ -1,11 +1,12 @@
 import React from 'react';
-import {AbsoluteFill, Easing, interpolate, useCurrentFrame} from 'remotion';
-import {colors, faceRef, zones} from './theme';
+import {AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
+import {colors, stageColors, stageFrame, zones} from './theme';
 import type {ZoomSegment} from './director';
 
 // ধাপ ৬.২ — ইফেক্টস
-//  • PunchZoom      : ভিডিও-লেয়ারে ধীর পাঞ্চ-জুম (বেসলাইন ১.০৪ → পয়েন্টে ১.০৮)
-//  • BackgroundGlow : উপরে হালকা গ্র্যাডিয়েন্ট + সোনালি গ্লো (কার্ড পড়তে সুবিধা)
+//  • zoomAt/StageVideo : ভিডিও-লেয়ারে ধীর পাঞ্চ-জুম (বেসলাইন ১.০৪ → পয়েন্টে ১.০৮)
+//  • StageVideo / StageBackground / StageProgressBar : স্টেজ-লেআউট (ধাপ ৬.৪) — ইনফোগ্রাফিক চলাকালীন ভিডিও নিচে গোল-কোণা ফ্রেমে ছোট হয়,
+//    পেছনে গাঢ় নীল-টিল ব্যাকগ্রাউন্ড; সময়-পরিকল্পনা `stagePlan.ts`-এ। (আগের BackgroundGlow বাদ — স্টেজ-ব্যাকগ্রাউন্ডই কার্ড পড়ার সুবিধা দেয়)
 //  • SceneFlash     : সিনের শুরুতে সোনালি ফ্ল্যাশ + আলোর স্লাইড-সোয়াইপ (শুধু কার্ড-জোনে; বক্তার মুখে নয়)
 
 // ───────────── টিউনিং ─────────────
@@ -48,56 +49,140 @@ export const zoomAt = (frame: number, segments: ZoomSegment[]): number => {
   return BASE_ZOOM + (PEAK_ZOOM - BASE_ZOOM) * env;
 };
 
-/** ভিডিও-লেয়ার র‍্যাপ করে জুম দেয় (ইনফোগ্রাফিক/ক্যাপশন এর বাইরে — শুধু ফুটেজ নড়ে) */
-export const PunchZoom: React.FC<{segments: ZoomSegment[]; children: React.ReactNode}> = ({
-  segments,
-  children,
-}) => {
+/** স্টেজ-ফ্রেমে ভিডিওর ভিতরের জুম (সোর্সের পাতলা কালো ধার ঢাকে; মুখ ফ্রেমের মাঝামাঝি) */
+export const FRAME_ZOOM = 1.06;
+/** নিচের ভিডিও-অগ্রগতি বার দেখাবে কিনা (রেফারেন্স-ছবিতে আছে; বন্ধ করতে false) */
+export const SHOW_STAGE_PROGRESS_BAR = true;
+
+const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+
+/**
+ * ভিডিও-লেয়ার: p = ০ হলে পুরো-স্ক্রিন (আগের মতো পাঞ্চ-জুমসহ), p = ১ হলে `stageFrame`-এর গোল-কোণা ছোট ফ্রেম।
+ * ৯:১৬ অনুপাত দুই অবস্থায় একই — ট্রানজিশনে ছবি বিকৃত হয় না। ইনফোগ্রাফিক/ক্যাপশন এর বাইরে — শুধু ফুটেজ নড়ে।
+ */
+export const StageVideo: React.FC<{
+  segments: ZoomSegment[];
+  stage: number;
+  children: React.ReactNode;
+}> = ({segments, stage: p, children}) => {
   const frame = useCurrentFrame();
-  const z = zoomAt(frame, segments);
+  const punch = zoomAt(frame, segments);
+  const z = lerp(punch, FRAME_ZOOM, p);
+  const rect: React.CSSProperties = {
+    position: 'absolute',
+    left: lerp(0, stageFrame.left, p),
+    top: lerp(0, stageFrame.top, p),
+    width: lerp(1080, stageFrame.width, p),
+    height: lerp(1920, stageFrame.height, p),
+    borderRadius: lerp(0, stageFrame.radius, p),
+  };
   return (
-    <AbsoluteFill
-      style={{
-        transform: `scale(${z})`,
-        transformOrigin: `${ZOOM_ORIGIN_X}px ${ZOOM_ORIGIN_Y}px`,
-        overflow: 'hidden',
-      }}
-    >
-      {children}
+    <>
+      <div style={{...rect, overflow: 'hidden', background: '#000'}}>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            transform: `scale(${z})`,
+            // পুরো-স্ক্রিনে কেন্দ্র y ≈ ৬০০ (৩১%), ফ্রেমে ≈ ৪০% — চুল উপরে কাটে না
+            transformOrigin: `50% ${lerp((ZOOM_ORIGIN_Y / 1920) * 100, 40, p)}%`,
+          }}
+        >
+          {children}
+        </div>
+      </div>
+      {/* ফ্রেমের সাদা ধার + গ্লো/ছায়া (আলাদা লেয়ারে, যাতে পুরো-স্ক্রিনে ভিডিওর কিনারা না কাটে) */}
+      <div
+        style={{
+          ...rect,
+          boxSizing: 'border-box',
+          border: `4px solid ${stageColors.frameBorder}`,
+          boxShadow: `0 0 48px ${stageColors.glow}, 0 20px 44px rgba(0,0,0,0.5)`,
+          opacity: p,
+          pointerEvents: 'none',
+        }}
+      />
+    </>
+  );
+};
+
+// স্টেজের তারা (স্থির অবস্থান — রেন্ডার-নির্ভর নয়; ধীরে ঝিকমিক)
+const STARS = Array.from({length: 26}, (_, i) => {
+  const r1 = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
+  const r2 = Math.abs(Math.sin(i * 78.233 + 1.7) * 24634.6345) % 1;
+  const r3 = Math.abs(Math.sin(i * 39.346 + 4.1) * 9371.1337) % 1;
+  return {x: 30 + r1 * 1020, y: 130 + r2 * 1650, r: 2 + r3 * 3.2, phase: r3 * 6.28};
+});
+
+/** স্টেজ-ব্যাকগ্রাউন্ড: গাঢ় নীল-টিল গ্র্যাডিয়েন্ট + ফ্রেমের পেছনে নীলচে গ্লো + ঝিকমিক তারা (opacity = p) */
+export const StageBackground: React.FC<{stage: number}> = ({stage: p}) => {
+  const frame = useCurrentFrame();
+  if (p <= 0.001) return null;
+  return (
+    <AbsoluteFill style={{opacity: p, pointerEvents: 'none'}}>
+      <AbsoluteFill
+        style={{
+          background: `linear-gradient(180deg, ${stageColors.top} 0%, ${stageColors.mid} 52%, ${stageColors.bottom} 100%)`,
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          background:
+            `radial-gradient(ellipse 560px 520px at 540px ${stageFrame.top + stageFrame.height / 2}px, ${stageColors.glow} 0%, rgba(77,227,255,0) 100%),` +
+            `radial-gradient(ellipse 720px 300px at 500px 520px, rgba(245,197,66,0.08) 0%, rgba(245,197,66,0) 100%)`,
+        }}
+      />
+      {STARS.map((s, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            left: s.x,
+            top: s.y,
+            width: s.r * 2,
+            height: s.r * 2,
+            borderRadius: '50%',
+            background: i % 3 === 0 ? colors.goldSoft : '#ffffff',
+            opacity: 0.18 + 0.5 * (0.5 + 0.5 * Math.sin(frame * 0.05 + s.phase)),
+          }}
+        />
+      ))}
     </AbsoluteFill>
   );
 };
 
-/**
- * উপরে হালকা গাঢ় সবুজ গ্র্যাডিয়েন্ট (কার্ড/ট্র্যাকার পরিষ্কার পড়তে) + ধীরে স্পন্দিত সোনালি গ্লো।
- * গ্র্যাডিয়েন্ট কার্ডের নিচের সীমায় (y ≈ ৬৩৫) পুরো মিলিয়ে যায় — চুলের রেখার (≈ ৫৭০) কাছে প্রায় স্বচ্ছ, মুখ অক্ষত।
- */
-export const BackgroundGlow: React.FC = () => {
+/** নিচের পাতলা রঙিন ভিডিও-অগ্রগতি বার (সোনালি → গোলাপি → নীল) + সাদা নব; স্টেজ-মোডে দেখা যায় */
+export const StageProgressBar: React.FC<{stage: number}> = ({stage: p}) => {
   const frame = useCurrentFrame();
-  const pulse = 0.5 + 0.5 * Math.sin(frame * 0.045);
-  const fadeEnd = zones.card.top + zones.card.height; // ৬৩৫
+  const {durationInFrames} = useVideoConfig();
+  if (!SHOW_STAGE_PROGRESS_BAR || p <= 0.001) return null;
+  const W = 960;
+  const pct = Math.max(0, Math.min(1, frame / Math.max(1, durationInFrames - 1)));
   return (
-    <AbsoluteFill style={{pointerEvents: 'none'}}>
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          top: 0,
-          height: fadeEnd,
-          background: `linear-gradient(180deg, rgba(6,38,29,0.62) 0%, rgba(6,38,29,0.34) 55%, rgba(6,38,29,0) 100%)`,
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          top: 0,
-          height: faceRef.hairTop,
-          background: `radial-gradient(ellipse 620px 300px at 50% 330px, rgba(245,197,66,${(0.1 + 0.06 * pulse).toFixed(3)}) 0%, rgba(245,197,66,0) 100%)`,
-        }}
-      />
+    <AbsoluteFill style={{opacity: p, pointerEvents: 'none'}}>
+      <div style={{position: 'absolute', left: 60, top: 1596, width: W, height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.16)'}}>
+        <div
+          style={{
+            width: W * pct,
+            height: 8,
+            borderRadius: 4,
+            backgroundImage: 'linear-gradient(90deg, #ffd54d, #ff6fb5, #4de3ff)',
+            backgroundSize: `${W}px 100%`,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            left: W * pct - 11,
+            top: -7,
+            width: 22,
+            height: 22,
+            borderRadius: '50%',
+            background: '#ffffff',
+            boxShadow: '0 0 10px rgba(255,255,255,0.7)',
+          }}
+        />
+      </div>
     </AbsoluteFill>
   );
 };

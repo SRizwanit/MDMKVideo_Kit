@@ -139,8 +139,10 @@ export const faceRef = {
 // ───────────── লেআউট জোন (ধাপ ৩/৪-এ ব্যবহৃত; ধাপ ৬.১-এ ছোট করা হয়েছে) ─────────────
 // চেয়ারে-বসা বক্তার মুখ ঢাকা এড়াতে: ইনফোগ্রাফিক উপরে, ক্যাপশন নিচের ১/৩-এ
 // ধাপ ৬.১: কার্ডের নিচের সীমা আগে y ৭৯০ ছিল (কপাল/চুলের ≈ ২০০px উপর চাপত);
+// ✱ স্টেজ-লেআউট (ধাপ ৬.৪, ব্যবহারকারীর রেফারেন্স-ছবি অনুযায়ী): ইনফোগ্রাফিক চলাকালীন ভিডিও নিচে গোল-কোণা ফ্রেমে (`stageFrame`)
+// ছোট হয়ে যায় — তাই কার্ড আর মুখের উপর পড়ে না; কার্ড আবার পূর্ণ আকারে (নিচের সীমা y ৭৮০)।
 // এখন y ≈ ৬৩৫ (ব্যবহারকারীর সিদ্ধান্ত: ৬২০–৬৫০)। চুলের রেখা (৫৭০) ছুঁয়ে মাত্র ≈ ৬৫px; চোখ-কপাল পুরো খোলা।
-export const CARD_BOTTOM = 635;
+export const CARD_BOTTOM = 780;
 export const zones = {
   infographic: {
     top: safeArea.top,
@@ -167,5 +169,26 @@ export const zones = {
   },
 } as const;
 
-export const theme = {VIDEO, colors, captionPalette, fonts, spacing, safeArea, zones, faceRef};
+// ───────────── স্টেজ-লেআউট (ধাপ ৬.৪) ─────────────
+// ইনফোগ্রাফিক সিন চলার সময় ভিডিও পুরো-স্ক্রিন থেকে এই ফ্রেমে ছোট হয় (৯:১৬ অনুপাত অক্ষত — বিকৃতি নেই)।
+// কার্ড y ২৫০–৭৮০, ফ্রেম y ৮২০–১৫২৪ (সেফ-এরিয়ার নিচ ১৫৪০-এর ভিতরে), ক্যাপশন (y ১২৮০–১৫৪০) ফ্রেমের নিচের অংশে বসে।
+const STAGE_FRAME_W = 396;
+export const stageFrame = {
+  width: STAGE_FRAME_W,
+  height: Math.round((STAGE_FRAME_W * 16) / 9), // ৭০৪
+  left: Math.round((1080 - STAGE_FRAME_W) / 2), // ৩৪২
+  top: CARD_BOTTOM + 40, // ৮২০
+  radius: 40,
+} as const;
+
+/** স্টেজ-ব্যাকগ্রাউন্ডের রঙ (গাঢ় নীল-টিল; বদলাতে চাইলে এখানে) */
+export const stageColors = {
+  top: '#061a2b',
+  mid: '#0a2c3d',
+  bottom: '#07202f',
+  glow: 'rgba(77,227,255,0.22)',
+  frameBorder: 'rgba(255,255,255,0.92)',
+} as const;
+
+export const theme = {VIDEO, colors, captionPalette, fonts, spacing, safeArea, zones, faceRef, stageFrame, stageColors};
 export default theme;

@@ -10,20 +10,24 @@ import {
   EXIT_FRAMES,
   direct,
 } from './director';
-import {BackgroundGlow, PunchZoom, SceneFlash} from './Effects';
+import {SceneFlash, StageBackground, StageProgressBar, StageVideo} from './Effects';
+import {planStage, stageAt} from './stagePlan';
 import {ProgressTracker} from './ProgressTracker';
 import {NumberBadge} from './NumberBadge';
 import {AutoCountCard, AutoPointCard} from './AutoScenes';
-import {CARD_LEFT} from './svgKit';
+import {CARD_LEFT, CARD_W} from './svgKit';
 import {svgRegistry} from './svgRegistry';
 import {IntroOutro} from './IntroOutro';
 import {planIntroOutro} from './introOutroPlan';
 import {SfxLayer} from './SfxLayer';
 import {planSfx, seedForVideo} from './sfxPlan';
 
-/** নম্বর-ব্যাজ: কার্ডের উপরের-বাম কোণায় ঝুলে থাকে (ট্র্যাকার y ১৫০–২৩৪-এর নিচে, কার্ড y ২৫০ থেকে) */
+/**
+ * নম্বর-ব্যাজ: কার্ডের উপরের-ডান কোণায় ঝুলে থাকে (ট্র্যাকার y ১৫০–২৩৪-এর নিচে, কার্ড y ২৫০ থেকে)।
+ * ধাপ ৬.৪: আগে উপরের-বামে ছিল এবং শিরোনামের প্রথম অক্ষর ঢেকে দিত (যেমন "সতর আড়াল"-এর "স") — এখন ডানে; শিরোনাম বাম-ঘেঁষা, তাই সংঘর্ষ নেই।
+ */
 const BADGE_SIZE = 104;
-const BADGE_LEFT = CARD_LEFT - Math.round(BADGE_SIZE * 0.6); // ≈ ৯৩ → ব্যাজ x ৯৩–১৯৭ (নিরাপদ-এলাকার বাম ৬০-এর ভিতরে)
+const BADGE_LEFT = CARD_LEFT + CARD_W - BADGE_SIZE; // ৮৩৬ → ব্যাজ x ৮৩৬–৯৪০ (নিরাপদ-এলাকার ডান সীমা ৯৪০)
 const BADGE_TOP = zones.card.top - 14; // ২৩৬
 
 /** Sequence-এর শেষ ফ্রেমগুলোয় ফেড-আউট (ট্র্যাকার/ব্যাজের জন্য — এদের নিজস্ব এক্সিট নেই) */
@@ -66,8 +70,9 @@ const SceneView: React.FC<{scene: DirectedScene}> = ({scene}) => {
 
 /**
  * মূল ভিডিও কম্পোজিশন — লেয়ারের চূড়ান্ত ক্রম (নিচ থেকে উপরে):
- *   ১) ভিডিও (+ অডিও) — পাঞ্চ-জুমের ভিতরে          [ধাপ ২ + ৬.২]
- *   ২) ইফেক্টস: ব্যাকগ্রাউন্ড গ্লো + সিন-ফ্ল্যাশ         [ধাপ ৬.২]
+ *   ০) স্টেজ-ব্যাকগ্রাউন্ড (ভিডিও ছোট হলে)               [ধাপ ৬.৪]
+ *   ১) ভিডিও (+ অডিও) — পুরো-স্ক্রিন ↔ নিচের গোল-কোণা ফ্রেম  [ধাপ ২ + ৬.২ + ৬.৪]
+ *   ২) ইফেক্টস: স্টেজ-অগ্রগতি বার + সিন-ফ্ল্যাশ           [ধাপ ৬.২ + ৬.৪]
  *   ৩) ইনফোগ্রাফিক: সিন-কার্ড (svg১…৯/অটো) → ট্র্যাকার → নম্বর-ব্যাজ   [ধাপ ৪–৬.২]
  *   ৪) ক্যাপশন                                       [ধাপ ৩]
  *   ৫) ইন্ট্রো টাইটেল (উপরে ট্র্যাকার-জোনে) + আউট্রো CTA (কার্ড-জোনে)   [ধাপ ৬.৩]
@@ -84,19 +89,27 @@ export const Video: React.FC<VideoProps> = ({videoSrc, words, seed}) => {
     [plan, introOutro, seed, words, durationInFrames],
   );
 
+  // ধাপ ৬.৪: স্টেজ-লেআউট — ইনফোগ্রাফিক চলাকালীন ভিডিও নিচে গোল-কোণা ফ্রেমে ছোট (সময়-পরিকল্পনা stagePlan.ts)
+  const frame = useCurrentFrame();
+  const stageSegs = useMemo(() => planStage(plan, introOutro, durationInFrames), [plan, introOutro, durationInFrames]);
+  const stage = stageAt(frame, stageSegs);
+
   return (
     <AbsoluteFill style={{backgroundColor: colors.bgDeep}}>
+      {/* লেয়ার ০: স্টেজ-ব্যাকগ্রাউন্ড (গাঢ় নীল-টিল, তারা, গ্লো) — ভিডিও ছোট হলে দেখা যায় */}
+      <StageBackground stage={stage} />
+
       {/* লেয়ার ১: মূল ভিডিও + অডিও।
-          সোর্স ৪৮০×৮৬৪ (৯:১৬) → ১০৮০×১৯২০ আপস্কেল, objectFit: cover; পাঞ্চ-জুম শুধু ফুটেজে (কেন্দ্র y ≈ ৬০০) */}
-      <PunchZoom segments={plan.zoom}>
+          সোর্স ৪৮০×৮৬৪ (৯:১৬) → পুরো-স্ক্রিনে ১০৮০×১৯২০ (objectFit: cover) অথবা স্টেজে ৩৯৬×৭০৪ গোল-কোণা ফ্রেম; পাঞ্চ-জুম শুধু ফুটেজে */}
+      <StageVideo segments={plan.zoom} stage={stage}>
         <OffthreadVideo
           src={videoSrc}
           style={{width: '100%', height: '100%', objectFit: 'cover'}}
         />
-      </PunchZoom>
+      </StageVideo>
 
       {/* লেয়ার ২: ইফেক্টস */}
-      <BackgroundGlow />
+      <StageProgressBar stage={stage} />
       <SceneFlash starts={plan.flashes} />
 
       {/* লেয়ার ৩: ইনফোগ্রাফিক — সিন-কার্ড */}
